@@ -64,9 +64,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				AddDataSeries("ES 09-25", Data.BarsPeriodType.Tick, 1, Data.MarketDataType.Last);
 
 				//Gestion de riesgo.
-				SetStopLoss(CalculationMode.Price, StopLossTicks);
-				SetProfitTarget(CalculationMode.Ticks, TakeProfitTicks);
-				SetTrailStop(CalculationMode.Ticks, TrailingStopTicks);
+				SetStopLoss(@"Longaniza", CalculationMode.Ticks, StopLossTicks, false);
+				SetProfitTarget(@"Longaniza", CalculationMode.Ticks, TakeProfitTicks);
+				// SetTrailStop(@"Longaniza", CalculationMode.Ticks, TrailingStopTicks, false);
 			}
 			else if (State == State.DataLoaded)
 			{
