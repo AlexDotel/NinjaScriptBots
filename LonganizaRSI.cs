@@ -75,6 +75,28 @@ namespace NinjaTrader.NinjaScript.Strategies
 				adx = ADX(AdxPeriod);
 			}
 		}
+		
+		protected override void OnMarketData(MarketDataEventArgs marketDataUpdate)
+		{
+
+			if (Position.MarketPosition != MarketPosition.Flat)
+			{
+				double unrealizedPnL = Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]);
+				
+				// Si trabajas en ticks
+				double ticksLoss = Position.GetUnrealizedProfitLoss(PerformanceUnit.Points, Close[0]) / TickSize;
+
+				if (!UsarDolaresEnVezDeTicks && ticksLoss <= -MaxFloatingLossTicks)
+				{
+					ExitLong("StopFlotanteTicks", "Longaniza");  // o ExitShort si es venta
+				}
+				else if (UsarDolaresEnVezDeTicks && unrealizedPnL <= -MaxFloatingLossCurrency)
+				{
+					ExitLong("StopFlotanteDolares", "Longaniza");
+				}
+			}
+
+		}
 
 		protected override void OnBarUpdate()
 		{
@@ -120,33 +142,46 @@ namespace NinjaTrader.NinjaScript.Strategies
 		#region Propiedades
 
 		[NinjaScriptProperty]
-        [Range(1, 100)]
-        public int RsiPeriod { get; set; } = 14;
+		[Range(1, 100)]
+		public int RsiPeriod { get; set; } = 14;
 
 		[NinjaScriptProperty]
-        [Range(1, 100)]
-        public double RsiThreshold { get; set; } = 50;
+		[Range(1, 100)]
+		public double RsiThreshold { get; set; } = 50;
 
-        [NinjaScriptProperty]
-        [Range(1, 50)]
-        public int RsiLookbackPeriod { get; set; } = 2;
+		[NinjaScriptProperty]
+		[Range(1, 50)]
+		public int RsiLookbackPeriod { get; set; } = 2;
 
-        [NinjaScriptProperty]
-        public double StopLossTicks { get; set; } = 10;
+		[NinjaScriptProperty]
+		public double StopLossTicks { get; set; } = 10;
 
-        [NinjaScriptProperty]
-        public double TakeProfitTicks { get; set; } = 20;
+		[NinjaScriptProperty]
+		public double TakeProfitTicks { get; set; } = 10;
 
-        [NinjaScriptProperty]
-        public double TrailingStopTicks { get; set; } = 5;
+		[NinjaScriptProperty]
+		public double TrailingStopTicks { get; set; } = 10;
 
-        [NinjaScriptProperty]
-        [Range(1, 50)]
-        public int AdxPeriod { get; set; } = 14;
+		[NinjaScriptProperty]
+		[Range(1, 50)]
+		public int AdxPeriod { get; set; } = 14;
 
-        [NinjaScriptProperty]
-        [Range(5, 50)]
-        public double AdxThreshold { get; set; } = 25;
+		[NinjaScriptProperty]
+		[Range(5, 50)]
+		public double AdxThreshold { get; set; } = 25;
+		
+		[NinjaScriptProperty]
+		[Display(Name = "Máx pérdida flotante (ticks)", GroupName = "Gestión de riesgo", Order = 1)]
+		public int MaxFloatingLossTicks { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Máx pérdida flotante ($)", GroupName = "Gestión de riesgo", Order = 2)]
+		public double MaxFloatingLossCurrency { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Modo de evaluación", GroupName = "Gestión de riesgo", Order = 3)]
+		public bool UsarDolaresEnVezDeTicks { get; set; }  // true = dólares, false = ticks
+
 
 
 		#endregion
