@@ -100,43 +100,40 @@ namespace NinjaTrader.NinjaScript.Strategies
 				Draw.Dot(this, "NEW DAY" + CurrentBar, false, 0, Low[0] - TickSize * 10, Brushes.MediumSlateBlue);
 			}
 
-			int centerIndex = GetCenterIndex(Fuerza);
+			//Obteniendo Highs and Lows en un rango de velas.
+			int windowSize = Fuerza;
 
-			if (IsSwingHigh(Fuerza))
-			{
-				Draw.Dot(this, "SwingHigh" + CurrentBar, false, centerIndex, High[centerIndex] + TickSize * 5, Brushes.Red);
-
-			}
-
-			if (IsSwingLow(Fuerza))
-			{
-				Draw.Dot(this, "SwingLow" + CurrentBar, false, centerIndex, Low[centerIndex] - TickSize * 5, Brushes.Blue);
-			}
+		    int centerHighIdx;
+		    double swingHigh = GetSwingHigh(windowSize, out centerHighIdx);
+		    if (!double.IsNaN(swingHigh))
+		    {
+		        Draw.Dot(this, "SwingHigh" + CurrentBar, false, centerHighIdx, swingHigh + TickSize * 5, Brushes.Red);
+		    }
+		
+		    int centerLowIdx;
+		    double swingLow = GetSwingLow(windowSize, out centerLowIdx);
+		    if (!double.IsNaN(swingLow))
+		    {
+		        Draw.Dot(this, "SwingLow" + CurrentBar, false, centerLowIdx, swingLow - TickSize * 5, Brushes.Green);
+		    }
 
 
 
 			#region Toma High [VENTAS]
-			if ((High[1] > Swing1.SwingHigh[2])
-				 && (High[2] < Swing1.SwingHigh[2]))
+			if (!double.IsNaN(swingHigh) && High[1] >= swingHigh)
 			{
 				HighTomado = true;
-				// BackBrush = Brushes.IndianRed;
+				BackBrush = Brushes.IndianRed;
 			}
 			#endregion
 
 			#region Toma Low [COMPRAS]
-			if ((Low[1] < Swing1.SwingLow[2])
-				 && (Low[2] > Swing1.SwingLow[2]))
+		    if (!double.IsNaN(swingLow) && Low[1] <= swingLow)
 			{
 				LowTomado = true;
-				// BackBrush = Brushes.CornflowerBlue;
+				BackBrush = Brushes.CornflowerBlue;
 			}
 			#endregion
-
-
-			HighTomado = true;
-			LowTomado = true;
-
 
 			#region Setup BAJISTA
 			if (
@@ -189,6 +186,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		}
 		#endregion
 		
+		#region GetSwingPRICE
 		private double GetSwingPrice(int windowSize, bool isHigh)
 		{
 		    int centerIndex = GetCenterIndex(windowSize);
@@ -197,9 +195,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (CurrentBar < windowSize - 1)
 				return double.NaN;
 
-		
+			
 		    return isHigh ? High[centerIndex] : Low[centerIndex];
 		}
+		#endregion
 
 		
 		#region Primera Vela del Dia
@@ -222,9 +221,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 		    if (windowSize < 3)
 		        throw new ArgumentException("windowSize debe ser al menos 3.");
 		
-		    // Asegurar que sea impar sumando 1 si es par
 		    if (windowSize % 2 == 0)
-		        windowSize++;
+		        windowSize++;  // Convierte a impar sumando 1
 		
 		    return windowSize / 2;
 		}
@@ -232,12 +230,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		
 		#region VerificarHigh
-		private bool IsSwingHigh(int windowSize)
+		private double GetSwingHigh(int windowSize, out int centerIndex)
 		{
-		    int centerIndex = GetCenterIndex(windowSize);
+		    centerIndex = GetCenterIndex(windowSize);
 		
-		    if (CurrentBar < centerIndex + (windowSize / 2))
-		        return false;
+		    if (CurrentBar < windowSize - 1)
+		        return double.NaN;
 		
 		    double centerHigh = High[centerIndex];
 		
@@ -247,21 +245,21 @@ namespace NinjaTrader.NinjaScript.Strategies
 		            continue;
 		
 		        if (High[i] >= centerHigh)
-		            return false;
+		            return double.NaN;
 		    }
-		
-		    return true;
+			
+		    return centerHigh;
 		}
 		#endregion
 		
 		
 		#region VerificarLow
-		private bool IsSwingLow(int windowSize)
+		private double GetSwingLow(int windowSize, out int centerIndex)
 		{
-		    int centerIndex = GetCenterIndex(windowSize);
+		    centerIndex = GetCenterIndex(windowSize);
 		
-		    if (CurrentBar < centerIndex + (windowSize / 2))
-		        return false;
+		    if (CurrentBar < windowSize - 1)
+		        return double.NaN;
 		
 		    double centerLow = Low[centerIndex];
 		
@@ -271,10 +269,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 		            continue;
 		
 		        if (Low[i] <= centerLow)
-		            return false;
+		            return double.NaN;
 		    }
-		
-		    return true;
+			
+		    return centerLow;
 		}
 		#endregion
 		
