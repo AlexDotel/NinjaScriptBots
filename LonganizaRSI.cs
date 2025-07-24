@@ -129,7 +129,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(1, 50)]
-        public int RsiLookbackPeriod { get; set; } = 5;
+        public int RsiLookbackPeriod { get; set; } = 2;
 
         [NinjaScriptProperty]
         public double StopLossTicks { get; set; } = 10;
