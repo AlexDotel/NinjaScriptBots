@@ -64,8 +64,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 				AddDataSeries("ES 09-25", Data.BarsPeriodType.Tick, 1, Data.MarketDataType.Last);
 
 				//Gestion de riesgo.
-				SetStopLoss(@"Longaniza", CalculationMode.Ticks, StopLossTicks, false);
-				SetProfitTarget(@"Longaniza", CalculationMode.Ticks, TakeProfitTicks);
+				// SetStopLoss(@"Longaniza", CalculationMode.Ticks, StopLossTicks, false);
+				// SetProfitTarget(@"Longaniza", CalculationMode.Ticks, TakeProfitTicks);
 				// SetTrailStop(@"Longaniza", CalculationMode.Ticks, TrailingStopTicks, false);
 			}
 			else if (State == State.DataLoaded)
@@ -75,31 +75,23 @@ namespace NinjaTrader.NinjaScript.Strategies
 				adx = ADX(AdxPeriod);
 			}
 		}
-		
+
 		protected override void OnMarketData(MarketDataEventArgs marketDataUpdate)
 		{
 
-			if (Position.MarketPosition != MarketPosition.Flat)
-			{
-				double unrealizedPnL = Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]);
-				
-				// Si trabajas en ticks
-				double ticksLoss = Position.GetUnrealizedProfitLoss(PerformanceUnit.Points, Close[0]) / TickSize;
-
-				if (!UsarDolaresEnVezDeTicks && ticksLoss <= -MaxFloatingLossTicks)
-				{
-					ExitLong("StopFlotanteTicks", "Longaniza");  // o ExitShort si es venta
-				}
-				else if (UsarDolaresEnVezDeTicks && unrealizedPnL <= -MaxFloatingLossCurrency)
-				{
-					ExitLong("StopFlotanteDolares", "Longaniza");
-				}
-			}
+			CheckFloatingLoss();
+			CheckFloatingProfit();
 
 		}
 
 		protected override void OnBarUpdate()
 		{
+
+			if (!EstaDentroDelHorario())
+    		return;
+
+
+			//Logica
 			int minBarsRequired = Math.Max(RsiLookbackPeriod + 2, AdxPeriod + 1);
 			if (BarsInProgress != 0 || CurrentBar < minBarsRequired || rsi == null || adx == null)
 				return;
@@ -137,50 +129,139 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 		}
 
+		void CheckFloatingLoss()
+		{
+			// Verifica si hay una posición abierta y si se debe aplicar el stop flotante 
+			if (Position.MarketPosition != MarketPosition.Flat)
+			{
+				double unrealizedPnL = Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]);
+
+				// Si trabajas en ticks
+				double ticksLoss = Position.GetUnrealizedProfitLoss(PerformanceUnit.Points, Close[0]) / TickSize;
+
+				if (!UsarDolaresEnVezDeTicks && ticksLoss <= -MaxFloatingLossTicks)
+				{
+					ExitLong("StopFlotanteTicks", "Longaniza");  // o ExitShort si es venta
+				}
+				else if (UsarDolaresEnVezDeTicks && unrealizedPnL <= -MaxFloatingLossCurrency)
+				{
+					ExitLong("StopFlotanteDolares", "Longaniza");
+				}
+			}
+		}
+
+		private void CheckFloatingProfit()
+		{
+			// Verifica si hay una posición abierta y si se debe aplicar el stop flotante 
+			if (Position.MarketPosition != MarketPosition.Flat)
+			{
+				double unrealizedPnL = Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]);
+
+				// Si trabajas en ticks
+				double ticksProfit = Position.GetUnrealizedProfitLoss(PerformanceUnit.Points, Close[0]) / TickSize;
+
+				if (!UsarDolaresEnVezDeTicks && ticksProfit >= MaxFloatingProfitTicks)
+				{
+					ExitLong("TakeProfitTicks", "Longaniza");  // o ExitShort si es venta
+				}
+				else if (UsarDolaresEnVezDeTicks && unrealizedPnL >= MaxFloatingProfitCurrency)
+				{
+					ExitLong("TakeProfitDolares", "Longaniza");
+				}
+			}
+		}
+
+		private bool EstaDentroDelHorario()
+		{
+			// Convertimos la hora actual de la barra a minutos desde la medianoche
+			int minutosActuales = Times[0][0].Hour * 60 + Times[0][0].Minute;
+
+			// Convertimos los inputs también a minutos desde medianoche
+			int inicio = HoraInicio * 60 + MinutoInicio;
+			int fin = HoraFin * 60 + MinutoFin;
+
+			// Consideramos casos donde el horario puede cruzar la medianoche
+			if (inicio <= fin)
+				return minutosActuales >= inicio && minutosActuales <= fin;
+			else
+				return minutosActuales >= inicio || minutosActuales <= fin;
+		}
+
+
 
 
 		#region Propiedades
 
 		[NinjaScriptProperty]
+		[Display(GroupName = "RSI", Order = 1)]
 		[Range(1, 100)]
 		public int RsiPeriod { get; set; } = 14;
 
 		[NinjaScriptProperty]
+		[Display(GroupName = "RSI", Order = 2)]
 		[Range(1, 100)]
 		public double RsiThreshold { get; set; } = 50;
 
 		[NinjaScriptProperty]
+		[Display(GroupName = "RSI", Order = 3)]
 		[Range(1, 50)]
 		public int RsiLookbackPeriod { get; set; } = 2;
 
-		[NinjaScriptProperty]
-		public double StopLossTicks { get; set; } = 10;
+		// [NinjaScriptProperty]
+		// public double StopLossTicks { get; set; } = 10;
+
+		// [NinjaScriptProperty]
+		// public double TakeProfitTicks { get; set; } = 10;
+
+		// [NinjaScriptProperty]
+		// public double TrailingStopTicks { get; set; } = 10;
 
 		[NinjaScriptProperty]
-		public double TakeProfitTicks { get; set; } = 10;
-
-		[NinjaScriptProperty]
-		public double TrailingStopTicks { get; set; } = 10;
-
-		[NinjaScriptProperty]
+		[Display(GroupName = "ADX", Order = 1)]
 		[Range(1, 50)]
 		public int AdxPeriod { get; set; } = 14;
 
 		[NinjaScriptProperty]
+		[Display(GroupName = "ADX", Order = 2)]
 		[Range(5, 50)]
 		public double AdxThreshold { get; set; } = 25;
-		
+
 		[NinjaScriptProperty]
-		[Display(Name = "Máx pérdida flotante (ticks)", GroupName = "Gestión de riesgo", Order = 1)]
+		[Display(Name = "Modo de evaluación", GroupName = "Gestión de riesgo", Order = 1)]
+		public bool UsarDolaresEnVezDeTicks { get; set; }  // true = dólares, false = ticks
+
+		[NinjaScriptProperty]
+		[Display(Name = "Máx pérdida flotante (ticks)", GroupName = "Gestión de riesgo", Order = 2)]
 		public int MaxFloatingLossTicks { get; set; }
 
 		[NinjaScriptProperty]
-		[Display(Name = "Máx pérdida flotante ($)", GroupName = "Gestión de riesgo", Order = 2)]
+		[Display(Name = "Máx pérdida flotante ($)", GroupName = "Gestión de riesgo", Order = 3)]
 		public double MaxFloatingLossCurrency { get; set; }
 
+		//Creamos los parametros para la funcion CheckFloatingProfit
 		[NinjaScriptProperty]
-		[Display(Name = "Modo de evaluación", GroupName = "Gestión de riesgo", Order = 3)]
-		public bool UsarDolaresEnVezDeTicks { get; set; }  // true = dólares, false = ticks
+		[Display(Name = "Máx ganancia flotante (ticks)", GroupName = "Gestión de riesgo", Order = 4)]
+		public int MaxFloatingProfitTicks { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "Máx ganancia flotante ($)", GroupName = "Gestión de riesgo", Order = 5)]
+		public double MaxFloatingProfitCurrency { get; set; }
+		
+		[NinjaScriptProperty]
+		[Range(0, 23), Display(Name = "Hora Inicio", GroupName = "Filtro Horario", Order = 1)]
+		public int HoraInicio { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 59), Display(Name = "Minuto Inicio", GroupName = "Filtro Horario", Order = 2)]
+		public int MinutoInicio { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 23), Display(Name = "Hora Fin", GroupName = "Filtro Horario", Order = 3)]
+		public int HoraFin { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 59), Display(Name = "Minuto Fin", GroupName = "Filtro Horario", Order = 4)]
+		public int MinutoFin { get; set; }
 
 
 

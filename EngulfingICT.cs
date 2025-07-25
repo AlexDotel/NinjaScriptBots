@@ -25,14 +25,14 @@ using NinjaTrader.NinjaScript.DrawingTools;
 //This namespace holds Strategies in this folder and is required. Do not change it. 
 namespace NinjaTrader.NinjaScript.Strategies
 {
-	public class RangeBreakOut : Strategy
+	public class EngulfingICT : Strategy
 	{
 		protected override void OnStateChange()
 		{
 			if (State == State.SetDefaults)
 			{
-				Description									= @"";
-				Name										= "RangeBreakOut";
+				Description									= @"ICT de to la vida.";
+				Name										= "EngulfingICT";
 				Calculate									= Calculate.OnBarClose;
 				EntriesPerDirection							= 1;
 				EntryHandling								= EntryHandling.AllEntries;
@@ -55,6 +55,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 			else if (State == State.Configure)
 			{
 			}
+		}
+
+		protected override void OnMarketData(MarketDataEventArgs marketDataUpdate)
+		{
+			
 		}
 
 		protected override void OnBarUpdate()
