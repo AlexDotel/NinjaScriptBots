@@ -64,9 +64,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 				AddDataSeries("ES 09-25", Data.BarsPeriodType.Tick, 1, Data.MarketDataType.Last);
 
 				//Gestion de riesgo.
-				// SetStopLoss(@"Longaniza", CalculationMode.Ticks, StopLossTicks, false);
-				// SetProfitTarget(@"Longaniza", CalculationMode.Ticks, TakeProfitTicks);
-				// SetTrailStop(@"Longaniza", CalculationMode.Ticks, TrailingStopTicks, false);
+				SetStopLoss(@"Longaniza", CalculationMode.Ticks, StopLossTicks, false);
+				SetProfitTarget(@"Longaniza", CalculationMode.Ticks, TakeProfitTicks);
+				SetTrailStop(@"Longaniza", CalculationMode.Ticks, TrailingStopTicks, false);
 			}
 			else if (State == State.DataLoaded)
 			{
@@ -87,9 +87,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 		protected override void OnBarUpdate()
 		{
 
-			if (!EstaDentroDelHorario())
-    		return;
 
+			//Comprobar barras suficientes
+			if (BarsInProgress != 0 || CurrentBar < Math.Max(RsiLookbackPeriod + 2, AdxPeriod + 1))
+				return;
+
+			if (!EstaDentroDelHorario())
+				return;
 
 			//Logica
 			int minBarsRequired = Math.Max(RsiLookbackPeriod + 2, AdxPeriod + 1);
@@ -207,14 +211,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[Range(1, 50)]
 		public int RsiLookbackPeriod { get; set; } = 2;
 
-		// [NinjaScriptProperty]
-		// public double StopLossTicks { get; set; } = 10;
+		[NinjaScriptProperty]
+		public double StopLossTicks { get; set; } = 10;
 
-		// [NinjaScriptProperty]
-		// public double TakeProfitTicks { get; set; } = 10;
+		[NinjaScriptProperty]
+		public double TakeProfitTicks { get; set; } = 10;
 
-		// [NinjaScriptProperty]
-		// public double TrailingStopTicks { get; set; } = 10;
+		[NinjaScriptProperty]
+		public double TrailingStopTicks { get; set; } = 10;
 
 		[NinjaScriptProperty]
 		[Display(GroupName = "ADX", Order = 1)]
@@ -227,7 +231,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 		public double AdxThreshold { get; set; } = 25;
 
 		[NinjaScriptProperty]
-		[Display(Name = "Modo de evaluación", GroupName = "Gestión de riesgo", Order = 1)]
+		[Display(Name = "Dolares por Ticks?", GroupName = "Gestión de riesgo", Order = 1)]
 		public bool UsarDolaresEnVezDeTicks { get; set; }  // true = dólares, false = ticks
 
 		[NinjaScriptProperty]
@@ -246,22 +250,23 @@ namespace NinjaTrader.NinjaScript.Strategies
 		[NinjaScriptProperty]
 		[Display(Name = "Máx ganancia flotante ($)", GroupName = "Gestión de riesgo", Order = 5)]
 		public double MaxFloatingProfitCurrency { get; set; }
-		
+
+		//HORARIO FILTRO
 		[NinjaScriptProperty]
 		[Range(0, 23), Display(Name = "Hora Inicio", GroupName = "Filtro Horario", Order = 1)]
-		public int HoraInicio { get; set; }
+		public int HoraInicio { get; set; } = 0;
 
 		[NinjaScriptProperty]
 		[Range(0, 59), Display(Name = "Minuto Inicio", GroupName = "Filtro Horario", Order = 2)]
-		public int MinutoInicio { get; set; }
+		public int MinutoInicio { get; set; } = 0;
 
 		[NinjaScriptProperty]
 		[Range(0, 23), Display(Name = "Hora Fin", GroupName = "Filtro Horario", Order = 3)]
-		public int HoraFin { get; set; }
+		public int HoraFin { get; set; } = 23;
 
 		[NinjaScriptProperty]
 		[Range(0, 59), Display(Name = "Minuto Fin", GroupName = "Filtro Horario", Order = 4)]
-		public int MinutoFin { get; set; }
+		public int MinutoFin { get; set; } = 59;
 
 
 
