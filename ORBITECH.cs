@@ -44,7 +44,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			{
 				Description									= @"ORB personal para optimizaciones diversas.";
 				Name										= "ORBITECH";
-				Calculate									= Calculate.OnEachTick;
+				Calculate									= Calculate.OnBarClose;
 				EntriesPerDirection							= 1;
 				EntryHandling								= EntryHandling.AllEntries;
 				IsExitOnSessionCloseStrategy				= true;
@@ -65,7 +65,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 			else if (State == State.Configure)
 			{
-				AddDataSeries(Data.BarsPeriodType.Tick, 1);
+				// AddDataSeries(Data.BarsPeriodType.Tick, 1);
 			}
 		}
 
@@ -76,13 +76,133 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 		protected override void OnBarUpdate()
 		{
-			//Add your custom strategy logic here.
+			 // Asegúrate de que estás trabajando solo con la serie principal
+			if (BarsInProgress != 0 || CurrentBar < BarsRequiredToTrade)
+				return;
+
+			// Resetear variables al comenzar un nuevo día
+			if (Bars.IsFirstBarOfSession)
+			{
+			rangeHigh = double.MinValue;
+			rangeLow = double.MaxValue;
+			rangeComplete = false;
+			tradeTaken = false;
+			}
+
+
+			DateTime barTime = Times[0][0];
+
+			if (IsInRangeTime(barTime))
+				UpdateRange();
+
+			if (!rangeComplete && barTime.TimeOfDay >= GetTime(EndHour, EndMinute).TimeOfDay)
+				rangeComplete = true;
+
+			if (!rangeComplete && barTime.TimeOfDay >= GetTime(EndHour, EndMinute).TimeOfDay)
+			{
+				rangeComplete = true;
+				DrawRangeBox();  // ← Pintamos el rectángulo del rango
+			}
+
+
+			if (rangeComplete && !tradeTaken && barTime.TimeOfDay < GetTime(LimitHour, LimitMinute).TimeOfDay)
+				TryEnterTrade();
+
+			if (UseBreakEven && tradeTaken)
+				ManageBreakEven();
+		}
+
+
+		// ===== FUNCIONES MODULARES ===
+		#region Funciones Modulares
+		
+
+		private DateTime GetTime(int hour, int minute)
+		{
+			return new DateTime(Times[0][0].Year, Times[0][0].Month, Times[0][0].Day, hour, minute, 0);
+		}
+
+		private bool IsInRangeTime(DateTime time)
+		{
+			return time >= GetTime(StartHour, StartMinute) && time <= GetTime(EndHour, EndMinute);
+		}
+
+		private void UpdateRange()
+		{
+			rangeHigh = Math.Max(rangeHigh, High[1]);
+			rangeLow = Math.Min(rangeLow, Low[1]);
 		}
 		
+		private void TryEnterTrade()
+		{
+			double rangeSize = rangeHigh - rangeLow;
+			int slTicks = (int)(rangeSize / TickSize * SlMultiplier);
+			int tpTicks = (int)(slTicks * TpRRR);
+
+			// Usamos el cierre confirmado de la vela anterior
+			if (Close[1] > rangeHigh)
+			{
+				entryPrice = Close[1];  // tomamos el precio actual como entrada
+				EnterLong("ORB Long");
+				SetStopLoss("ORB Long", CalculationMode.Ticks, slTicks, false);
+				SetProfitTarget("ORB Long", CalculationMode.Ticks, tpTicks);
+				tradeTaken = true;
+			}
+			else if (Close[1] < rangeLow)
+			{
+				entryPrice = Close[1];
+				EnterShort("ORB Short");
+				SetStopLoss("ORB Short", CalculationMode.Ticks, slTicks, false);
+				SetProfitTarget("ORB Short", CalculationMode.Ticks, tpTicks);
+				tradeTaken = true;
+			}
+		}
+
+
+		private void ManageBreakEven()
+		{
+			if (Position.MarketPosition == MarketPosition.Long)
+			{
+				if (Close[0] >= entryPrice + (BeTriggerTicks * TickSize))
+				{
+					SetStopLoss(CalculationMode.Price, entryPrice + (BeOffsetTicks * TickSize));
+				}
+			}
+			else if (Position.MarketPosition == MarketPosition.Short)
+			{
+				if (Close[0] <= entryPrice - (BeTriggerTicks * TickSize))
+				{
+					SetStopLoss(CalculationMode.Price, entryPrice - (BeOffsetTicks * TickSize));
+				}
+			}
+		}
+
+		private void DrawRangeBox()
+		{
+			string tag = "ORBRange_" + Times[0][0].ToString("yyyyMMddHHmmss");
+
+			Draw.Rectangle(
+				this,
+				tag,
+				false,
+				GetTime(StartHour, StartMinute),
+				rangeHigh,
+				GetTime(EndHour, EndMinute),
+				rangeLow,
+				Brushes.Transparent,
+				Brushes.Blue,
+				2
+			);
+		}
+
+
+		#endregion
+
+
 		#region Properties
-		
+
 		// === Inputs ===
-	    [NinjaScriptProperty]
+		[NinjaScriptProperty]
 	    public int StartHour { get; set; } = 9;
 	    [NinjaScriptProperty]
 	    public int StartMinute { get; set; } = 30;
