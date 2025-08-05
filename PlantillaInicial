@@ -1,0 +1,39 @@
+#region Using declarations
+using System;
+using NinjaTrader.Cbi;
+using NinjaTrader.Gui.Tools;
+using NinjaTrader.NinjaScript;
+using NinjaTrader.Data;
+using NinjaTrader.NinjaScript.Strategies;
+#endregion
+
+// Namespace for custom strategies
+namespace NinjaTrader.NinjaScript.Strategies
+{
+    public class PlantillaInicial : Strategy
+    {
+        protected override void OnStateChange()
+        {
+            if (State == State.SetDefaults)
+            {
+                Name = "PlantillaInicial";
+                Calculate = Calculate.OnBarClose;
+                // Configuración inicial
+                IsOverlay = false;
+                AddDataSeries(Data.BarsPeriodType.Tick, 1);
+            }
+            else if (State == State.Configure)
+            {
+                // Configuración adicional si es necesario
+            }
+        }
+
+        protected override void OnBarUpdate()
+        {
+            if (CurrentBar < 1)
+                return;
+
+            // Lógica de trading aquí
+        }
+    }
+}
