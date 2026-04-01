@@ -47,14 +47,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 			}
 			else if (State == State.Configure)
 			{
-				candleStickPatternLogic = new CandleStickPatternLogic(this, 3);
+				candleStickPatternLogic = new CandleStickPatternLogic(this, 2);
+				SetParabolicStop(CalculationMode.Percent, 0.0075);
 			}
 			else if (State == State.DataLoaded)
 			{
-				AddChartIndicator(CandlestickPattern(ChartPattern.HangingMan, 3));
-				AddChartIndicator(CandlestickPattern(ChartPattern.BullishBeltHold, 3));
-				AddChartIndicator(CandlestickPattern(ChartPattern.ShootingStar, 3));
-				AddChartIndicator(Bollinger(2, 14));
+				AddChartIndicator(CandlestickPattern(ChartPattern.BearishEngulfing, 2));
 			}
 		}
 
@@ -65,17 +63,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 			if (CurrentBars[0] < BarsRequiredToTrade)
 				return;
 
-			if (candleStickPatternLogic.Evaluate(ChartPattern.HangingMan))
-				EnterLong();
-
-			if (candleStickPatternLogic.Evaluate(ChartPattern.ShootingStar))
-				ExitLong();
-
-			if (candleStickPatternLogic.Evaluate(ChartPattern.BullishBeltHold))
+			if (candleStickPatternLogic.Evaluate(ChartPattern.BearishEngulfing))
 				EnterShort();
-
-			if (Bollinger(2, 14)[0].ApproxCompare(Bollinger(2, 14).Values[2][0]) >= 0)
-				ExitShort();
 		}
 	}
 }

@@ -28,7 +28,7 @@ using NinjaTrader.NinjaScript.DrawingTools;
 // This namespace holds strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies
 {
-	public class AutoStrategy3 : Strategy
+	public class AutoStrategy1 : Strategy
 	{
 		private Indicators.CandleStickPatternLogic candleStickPatternLogic;
 		
@@ -42,18 +42,17 @@ namespace NinjaTrader.NinjaScript.Strategies
 				IsExitOnSessionCloseStrategy              = false;
 				IsInstantiatedOnEachOptimizationIteration = true;
 				MaximumBarsLookBack                       = MaximumBarsLookBack.TwoHundredFiftySix;
-				Name                                      = "AutoStrategy3";
+				Name                                      = "AutoStrategy1";
 				SupportsOptimizationGraph                 = false;
 			}
 			else if (State == State.Configure)
 			{
-				candleStickPatternLogic = new CandleStickPatternLogic(this, 5);
-				SetParabolicStop(CalculationMode.Percent, 0.0175);
+				candleStickPatternLogic = new CandleStickPatternLogic(this, 2);
+				SetParabolicStop(CalculationMode.Percent, 0.0075);
 			}
 			else if (State == State.DataLoaded)
 			{
-				AddChartIndicator(Bollinger(2, 14));
-				AddChartIndicator(CandlestickPattern(ChartPattern.BearishEngulfing, 5));
+				AddChartIndicator(CandlestickPattern(ChartPattern.BearishEngulfing, 2));
 			}
 		}
 
@@ -63,9 +62,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 
 			if (CurrentBars[0] < BarsRequiredToTrade)
 				return;
-
-			if (Bollinger(2, 14).Values[1][0].ApproxCompare(Close[0]) == 0)
-				EnterLong();
 
 			if (candleStickPatternLogic.Evaluate(ChartPattern.BearishEngulfing))
 				EnterShort();
