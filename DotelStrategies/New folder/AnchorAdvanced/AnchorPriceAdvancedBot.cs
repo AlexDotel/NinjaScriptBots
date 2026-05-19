@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using NinjaTrader.Cbi;
 using NinjaTrader.NinjaScript;
+using NinjaTrader.NinjaScript.Indicators;
 #endregion
 
 namespace NinjaTrader.NinjaScript.Strategies
@@ -17,6 +18,15 @@ namespace NinjaTrader.NinjaScript.Strategies
         private ScheduleSlot[] scheduleSlots;
         private DateTime currentTradingDate;
         private bool tradingDateInitialized;
+        private Dictionary<string, TrailingStopState> trailingStopStates;
+        private bool currentSessionGapEvaluated;
+        private bool currentSessionHasOpeningGap;
+        private double currentSessionOpenPrice;
+        private double previousSessionClosePrice;
+        private double currentSessionGapTicks;
+        private string currentSessionGapError;
+        private ADX marketRegimeAdx;
+        private EMA marketRegimeEma;
 
         protected override void OnStateChange()
         {
@@ -51,8 +61,19 @@ namespace NinjaTrader.NinjaScript.Strategies
                 AnchorHour5 = -1.0;
 
                 MinDistanceTicks = 10;
+                RequireDailyOpeningGap = false;
+                UseMarketRegimeFilter = false;
+                MarketRegimeAdxPeriod = 14;
+                MarketRegimeAdxTrendThreshold = 25;
+                MarketRegimeEmaPeriod = 34;
+                MarketRegimeSlopeLookbackBars = 5;
+                MarketRegimeSlopeThresholdTicks = 6;
                 StopLossTicks = 20;
                 TakeProfitTicks = 20;
+                UseTrailingStop = false;
+                TrailingTriggerTicks = 10;
+                TrailingDistanceTicks = 8;
+                TrailingStepTicks = 2;
             }
             else if (State == State.Configure)
             {
@@ -68,7 +89,40 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (MinDistanceTicks < 0)
                     throw new ArgumentOutOfRangeException(nameof(MinDistanceTicks), "MinDistanceTicks no puede ser negativo.");
 
+                if (MarketRegimeAdxPeriod <= 0)
+                    throw new ArgumentOutOfRangeException(nameof(MarketRegimeAdxPeriod), "MarketRegimeAdxPeriod debe ser mayor que 0.");
+
+                if (MarketRegimeAdxTrendThreshold < 0)
+                    throw new ArgumentOutOfRangeException(nameof(MarketRegimeAdxTrendThreshold), "MarketRegimeAdxTrendThreshold no puede ser negativo.");
+
+                if (MarketRegimeEmaPeriod <= 0)
+                    throw new ArgumentOutOfRangeException(nameof(MarketRegimeEmaPeriod), "MarketRegimeEmaPeriod debe ser mayor que 0.");
+
+                if (MarketRegimeSlopeLookbackBars <= 0)
+                    throw new ArgumentOutOfRangeException(nameof(MarketRegimeSlopeLookbackBars), "MarketRegimeSlopeLookbackBars debe ser mayor que 0.");
+
+                if (MarketRegimeSlopeThresholdTicks < 0)
+                    throw new ArgumentOutOfRangeException(nameof(MarketRegimeSlopeThresholdTicks), "MarketRegimeSlopeThresholdTicks no puede ser negativo.");
+
+                if (UseTrailingStop)
+                {
+                    if (TrailingTriggerTicks <= 0)
+                        throw new ArgumentOutOfRangeException(nameof(TrailingTriggerTicks), "TrailingTriggerTicks debe ser mayor que 0.");
+
+                    if (TrailingDistanceTicks <= 0)
+                        throw new ArgumentOutOfRangeException(nameof(TrailingDistanceTicks), "TrailingDistanceTicks debe ser mayor que 0.");
+
+                    if (TrailingStepTicks < 0)
+                        throw new ArgumentOutOfRangeException(nameof(TrailingStepTicks), "TrailingStepTicks no puede ser negativo.");
+                }
+
+                trailingStopStates = new Dictionary<string, TrailingStopState>(StringComparer.Ordinal);
                 scheduleSlots = BuildScheduleSlots();
+            }
+            else if (State == State.DataLoaded)
+            {
+                marketRegimeAdx = ADX(MarketRegimeAdxPeriod);
+                marketRegimeEma = EMA(MarketRegimeEmaPeriod);
             }
         }
 
@@ -84,6 +138,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return;
 
             ResetDailyStateIfNeeded();
+            UpdateTrailingStops();
 
             TradeDirection effectiveDirection = GetEffectiveDirection();
 
@@ -97,6 +152,29 @@ namespace NinjaTrader.NinjaScript.Strategies
                 slot.ProcessedToday = true;
                 TryExecuteSlot(slot, ref effectiveDirection);
             }
+        }
+
+        protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity,
+            MarketPosition marketPosition, string orderId, DateTime time)
+        {
+            if (!UseTrailingStop || execution == null || execution.Order == null || execution.Order.OrderState != OrderState.Filled)
+                return;
+
+            Order order = execution.Order;
+            string orderName = order.Name ?? string.Empty;
+
+            if (IsAnchorEntryOrder(orderName, order.OrderAction))
+            {
+                RegisterFilledEntry(orderName, order.OrderAction, price, quantity);
+                return;
+            }
+
+            string fromEntrySignal = order.FromEntrySignal ?? string.Empty;
+            if (!string.IsNullOrEmpty(fromEntrySignal))
+                RegisterFilledExit(fromEntrySignal, quantity);
+
+            if (marketPosition == MarketPosition.Flat && trailingStopStates != null && trailingStopStates.Count > 0)
+                trailingStopStates.Clear();
         }
 
         private ScheduleSlot[] BuildScheduleSlots()
@@ -235,6 +313,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return false;
             }
 
+            if (!PassesDailyOpeningGapFilter(slot.SlotNumber))
+                return false;
+
+            if (!PassesMarketRegimeFilter(slot.SlotNumber))
+                return false;
+
             if (effectiveDirection != TradeDirection.None && effectiveDirection != signalDirection)
             {
                 Print(string.Format(
@@ -276,6 +360,75 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             SetStopLoss(signalName, CalculationMode.Ticks, StopLossTicks, false);
             SetProfitTarget(signalName, CalculationMode.Ticks, TakeProfitTicks);
+        }
+
+        private void UpdateTrailingStops()
+        {
+            if (!UseTrailingStop || trailingStopStates == null || trailingStopStates.Count == 0)
+                return;
+
+            if (Position.MarketPosition == MarketPosition.Flat)
+            {
+                trailingStopStates.Clear();
+                return;
+            }
+
+            double minImprovement = TrailingStepTicks * TickSize;
+            List<string> signalNames = new List<string>(trailingStopStates.Keys);
+
+            for (int signalIndex = 0; signalIndex < signalNames.Count; signalIndex++)
+            {
+                string signalName = signalNames[signalIndex];
+                TrailingStopState state = trailingStopStates[signalName];
+
+                if (state.Quantity <= 0)
+                {
+                    trailingStopStates.Remove(signalName);
+                    continue;
+                }
+
+                if (state.Direction == TradeDirection.Long)
+                {
+                    double triggerPrice = state.EntryPrice + (TrailingTriggerTicks * TickSize);
+                    if (Close[0] < triggerPrice)
+                        continue;
+
+                    double candidateStopPrice = Instrument.MasterInstrument.RoundToTickSize(
+                        Close[0] - (TrailingDistanceTicks * TickSize));
+
+                    if (candidateStopPrice >= Close[0])
+                        continue;
+
+                    if (!double.IsNaN(state.LastAppliedStopPrice)
+                        && candidateStopPrice <= state.LastAppliedStopPrice + minImprovement)
+                    {
+                        continue;
+                    }
+
+                    SetStopLoss(signalName, CalculationMode.Price, candidateStopPrice, false);
+                    state.LastAppliedStopPrice = candidateStopPrice;
+                    continue;
+                }
+
+                double shortTriggerPrice = state.EntryPrice - (TrailingTriggerTicks * TickSize);
+                if (Close[0] > shortTriggerPrice)
+                    continue;
+
+                double shortCandidateStopPrice = Instrument.MasterInstrument.RoundToTickSize(
+                    Close[0] + (TrailingDistanceTicks * TickSize));
+
+                if (shortCandidateStopPrice <= Close[0])
+                    continue;
+
+                if (!double.IsNaN(state.LastAppliedStopPrice)
+                    && shortCandidateStopPrice >= state.LastAppliedStopPrice - minImprovement)
+                {
+                    continue;
+                }
+
+                SetStopLoss(signalName, CalculationMode.Price, shortCandidateStopPrice, false);
+                state.LastAppliedStopPrice = shortCandidateStopPrice;
+            }
         }
 
         private TradeDirection GetEffectiveDirection()
@@ -329,6 +482,182 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             for (int slotIndex = 0; slotIndex < scheduleSlots.Length; slotIndex++)
                 scheduleSlots[slotIndex].ProcessedToday = false;
+
+            RefreshCurrentSessionGapState();
+        }
+
+        private bool PassesDailyOpeningGapFilter(int slotNumber)
+        {
+            if (!RequireDailyOpeningGap)
+                return true;
+
+            if (!currentSessionGapEvaluated)
+            {
+                Print(string.Format(
+                    "{0} | Slot {1} | Entrada omitida: no se pudo evaluar el gap diario ({2}).",
+                    Time[0],
+                    slotNumber,
+                    string.IsNullOrEmpty(currentSessionGapError) ? "datos insuficientes" : currentSessionGapError));
+                return false;
+            }
+
+            if (currentSessionHasOpeningGap)
+                return true;
+
+            Print(string.Format(
+                "{0} | Slot {1} | Entrada omitida por filtro gap diario. OpenDia={2} PrevClose={3} GapTicks={4:F2}.",
+                Time[0],
+                slotNumber,
+                currentSessionOpenPrice,
+                previousSessionClosePrice,
+                currentSessionGapTicks));
+            return false;
+        }
+
+        private bool PassesMarketRegimeFilter(int slotNumber)
+        {
+            if (!UseMarketRegimeFilter)
+                return true;
+
+            if (!HasEnoughBarsForMarketRegime() || marketRegimeAdx == null || marketRegimeEma == null)
+            {
+                Print(string.Format(
+                    "{0} | Slot {1} | Entrada omitida: filtro de contexto sin barras suficientes.",
+                    Time[0],
+                    slotNumber));
+                return false;
+            }
+
+            double adxValue = marketRegimeAdx[0];
+            double emaSlopeTicks = GetCurrentMarketRegimeSlopeTicks();
+
+            if (adxValue < MarketRegimeAdxTrendThreshold)
+                return true;
+
+            if (emaSlopeTicks < MarketRegimeSlopeThresholdTicks)
+                return true;
+
+            Print(string.Format(
+                "{0} | Slot {1} | Entrada omitida por filtro contexto. Mercado tendencial. ADX={2:F2} SlopeTicks={3:F2}.",
+                Time[0],
+                slotNumber,
+                adxValue,
+                emaSlopeTicks));
+            return false;
+        }
+
+        private void RefreshCurrentSessionGapState()
+        {
+            currentSessionGapEvaluated = TryResolveSessionOpeningGap(
+                currentTradingDate,
+                out currentSessionOpenPrice,
+                out previousSessionClosePrice,
+                out currentSessionGapTicks,
+                out currentSessionGapError);
+
+            currentSessionHasOpeningGap = currentSessionGapEvaluated && currentSessionGapTicks >= 1.0 - 1e-9;
+        }
+
+        private bool HasEnoughBarsForMarketRegime()
+        {
+            int requiredBarIndex = Math.Max(
+                MarketRegimeAdxPeriod,
+                MarketRegimeEmaPeriod + MarketRegimeSlopeLookbackBars - 1);
+
+            return CurrentBar >= requiredBarIndex;
+        }
+
+        private double GetCurrentMarketRegimeSlopeTicks()
+        {
+            return Math.Abs(marketRegimeEma[0] - marketRegimeEma[MarketRegimeSlopeLookbackBars]) / TickSize;
+        }
+
+        private bool TryResolveSessionOpeningGap(DateTime tradingDay, out double sessionOpenPrice, out double previousDayClosePrice,
+            out double gapTicks, out string error)
+        {
+            sessionOpenPrice = double.NaN;
+            previousDayClosePrice = double.NaN;
+            gapTicks = 0.0;
+            error = null;
+
+            int firstBarOfDayBarsAgo = FindFirstBarOfDay(tradingDay);
+            if (firstBarOfDayBarsAgo < 0)
+            {
+                error = string.Format("No se encontro el inicio del dia {0:yyyy-MM-dd}.", tradingDay);
+                return false;
+            }
+
+            int previousDayCloseBarsAgo = firstBarOfDayBarsAgo + 1;
+            if (previousDayCloseBarsAgo > CurrentBar)
+            {
+                error = string.Format("No hay cierre previo disponible para {0:yyyy-MM-dd}.", tradingDay);
+                return false;
+            }
+
+            sessionOpenPrice = Open[firstBarOfDayBarsAgo];
+            previousDayClosePrice = Close[previousDayCloseBarsAgo];
+            gapTicks = Math.Abs(sessionOpenPrice - previousDayClosePrice) / TickSize;
+            return true;
+        }
+
+        private int FindFirstBarOfDay(DateTime tradingDay)
+        {
+            for (int barsAgo = 0; barsAgo <= CurrentBar; barsAgo++)
+            {
+                if (Time[barsAgo].Date != tradingDay)
+                    return barsAgo - 1;
+            }
+
+            if (CurrentBar >= 0 && Time[CurrentBar].Date == tradingDay)
+                return CurrentBar;
+
+            return -1;
+        }
+
+        private bool IsAnchorEntryOrder(string orderName, OrderAction orderAction)
+        {
+            if (string.IsNullOrEmpty(orderName))
+                return false;
+
+            if (orderAction != OrderAction.Buy && orderAction != OrderAction.SellShort)
+                return false;
+
+            return orderName.StartsWith("Anchor", StringComparison.Ordinal);
+        }
+
+        private void RegisterFilledEntry(string signalName, OrderAction orderAction, double fillPrice, int fillQuantity)
+        {
+            if (trailingStopStates == null)
+                trailingStopStates = new Dictionary<string, TrailingStopState>(StringComparer.Ordinal);
+
+            TradeDirection direction = orderAction == OrderAction.Buy ? TradeDirection.Long : TradeDirection.Short;
+            double initialStopPrice = GetInitialStopPrice(fillPrice, direction);
+
+            if (!trailingStopStates.TryGetValue(signalName, out TrailingStopState state))
+            {
+                trailingStopStates[signalName] = new TrailingStopState(direction, fillPrice, fillQuantity, initialStopPrice);
+                return;
+            }
+
+            state.RegisterEntryFill(fillPrice, fillQuantity, initialStopPrice);
+        }
+
+        private void RegisterFilledExit(string signalName, int fillQuantity)
+        {
+            if (trailingStopStates == null || !trailingStopStates.TryGetValue(signalName, out TrailingStopState state))
+                return;
+
+            if (state.RegisterExitFill(fillQuantity))
+                trailingStopStates.Remove(signalName);
+        }
+
+        private double GetInitialStopPrice(double entryPrice, TradeDirection direction)
+        {
+            double stopPrice = direction == TradeDirection.Long
+                ? entryPrice - (StopLossTicks * TickSize)
+                : entryPrice + (StopLossTicks * TickSize);
+
+            return Instrument.MasterInstrument.RoundToTickSize(stopPrice);
         }
 
         private bool TryResolveAnchorPoint(DateTime checkBarTime, ScheduleSlot slot, out double resolvedAnchorPrice, out DateTime resolvedAnchorTime, out string error)
@@ -524,6 +853,50 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
         }
 
+        private sealed class TrailingStopState
+        {
+            public TrailingStopState(TradeDirection direction, double entryPrice, int quantity, double lastAppliedStopPrice)
+            {
+                Direction = direction;
+                EntryPrice = entryPrice;
+                Quantity = quantity;
+                LastAppliedStopPrice = lastAppliedStopPrice;
+            }
+
+            public TradeDirection Direction { get; private set; }
+            public double EntryPrice { get; private set; }
+            public int Quantity { get; private set; }
+            public double LastAppliedStopPrice { get; set; }
+
+            public void RegisterEntryFill(double fillPrice, int fillQuantity, double initialStopPrice)
+            {
+                if (fillQuantity <= 0)
+                    return;
+
+                if (Quantity <= 0)
+                {
+                    EntryPrice = fillPrice;
+                    Quantity = fillQuantity;
+                    LastAppliedStopPrice = initialStopPrice;
+                    return;
+                }
+
+                double totalEntryValue = (EntryPrice * Quantity) + (fillPrice * fillQuantity);
+                Quantity += fillQuantity;
+                EntryPrice = totalEntryValue / Quantity;
+                LastAppliedStopPrice = initialStopPrice;
+            }
+
+            public bool RegisterExitFill(int fillQuantity)
+            {
+                if (fillQuantity <= 0)
+                    return Quantity <= 0;
+
+                Quantity = Math.Max(0, Quantity - fillQuantity);
+                return Quantity == 0;
+            }
+        }
+
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
         [Display(Name = "Cantidad", GroupName = "01. Orden", Order = 0)]
@@ -607,6 +980,46 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Requerir gap apertura diario", GroupName = "03. Reglas", Order = 1)]
+        public bool RequireDailyOpeningGap
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Filtrar solo reversion media", GroupName = "03. Reglas", Order = 2)]
+        public bool UseMarketRegimeFilter
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Periodo ADX contexto", GroupName = "03. Reglas", Order = 3)]
+        public int MarketRegimeAdxPeriod
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "Umbral ADX tendencia", GroupName = "03. Reglas", Order = 4)]
+        public double MarketRegimeAdxTrendThreshold
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Periodo EMA contexto", GroupName = "03. Reglas", Order = 5)]
+        public int MarketRegimeEmaPeriod
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Lookback pendiente EMA", GroupName = "03. Reglas", Order = 6)]
+        public int MarketRegimeSlopeLookbackBars
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Pendiente minima EMA (ticks)", GroupName = "03. Reglas", Order = 7)]
+        public int MarketRegimeSlopeThresholdTicks
+        { get; set; }
+
+        [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
         [Display(Name = "Stop loss (ticks)", GroupName = "04. Riesgo", Order = 0)]
         public int StopLossTicks
@@ -616,6 +1029,29 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(1, int.MaxValue)]
         [Display(Name = "Take profit (ticks)", GroupName = "04. Riesgo", Order = 1)]
         public int TakeProfitTicks
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Usar trailing", GroupName = "05. Trailing", Order = 0)]
+        public bool UseTrailingStop
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Trigger trailing (ticks)", GroupName = "05. Trailing", Order = 1)]
+        public int TrailingTriggerTicks
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Distancia trailing (ticks)", GroupName = "05. Trailing", Order = 2)]
+        public int TrailingDistanceTicks
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, int.MaxValue)]
+        [Display(Name = "Paso trailing (ticks)", Description = "0 = mover el stop en cada mejora util.", GroupName = "05. Trailing", Order = 3)]
+        public int TrailingStepTicks
         { get; set; }
     }
 }

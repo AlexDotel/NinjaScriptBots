@@ -17,6 +17,12 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int startMinutes;
         private int endMinutes;
         private ADX adx;
+        private EMA emaTrend;
+        private double dailyPnLBaseline;
+        private double lastKnownStrategyPnL;
+        private DateTime trackedPnLDate;
+        private bool hasTrackedPnLDate;
+        private bool dailyPnLLimitReached;
 
         protected override void OnStateChange()
         {
@@ -46,11 +52,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                 UseTrendFilter = true;
                 AdxPeriod = 14;
                 AdxTrendThreshold = 25;
+                UseEmaTrendFilter = false;
+                EmaTrendPeriod = 200;
 
                 StopLossTicks = 20;
                 ProfitTargetTicks = 40;
                 BreakEvenTriggerTicks = 12;
                 BreakEvenPlusTicks = 1;
+
+                UseDailyProfitLimit = false;
+                DailyProfitLimit = 300;
+                UseDailyLossLimit = false;
+                DailyLossLimit = 300;
             }
             else if (State == State.Configure)
             {
@@ -63,6 +76,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (State == State.DataLoaded)
             {
                 adx = ADX(AdxPeriod);
+                emaTrend = EMA(EmaTrendPeriod);
             }
         }
 
@@ -71,46 +85,71 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (BarsInProgress != 0)
                 return;
 
-            if (CurrentBar + 1 < ConsecutiveBars)
-                return;
+            double strategyNetPnL = GetStrategyNetPnL();
+            ResetDailyPnLTrackingIfNeeded(strategyNetPnL);
 
-            if (UseTrendFilter && CurrentBar < AdxPeriod)
-                return;
-
-            bool insideTradingWindow = IsWithinTradingWindow();
-
-            if (Position.MarketPosition != MarketPosition.Flat)
+            try
             {
-                UpdateBreakEven();
+                bool insideTradingWindow = IsWithinTradingWindow();
+                double dailyPnL = strategyNetPnL - dailyPnLBaseline;
 
-                if (CloseOutsideSchedule && !insideTradingWindow)
-                    ExitOpenPosition();
+                if (HasReachedDailyPnLLimit(dailyPnL))
+                {
+                    if (Position.MarketPosition != MarketPosition.Flat)
+                        ExitOpenPosition("DailyPnLLimitExit");
 
-                return;
+                    return;
+                }
+
+                if (Position.MarketPosition != MarketPosition.Flat)
+                {
+                    UpdateBreakEven();
+
+                    if (CloseOutsideSchedule && !insideTradingWindow)
+                        ExitOpenPosition("OutsideScheduleExit");
+
+                    return;
+                }
+
+                if (CurrentBar + 1 < ConsecutiveBars)
+                    return;
+
+                if (UseTrendFilter && CurrentBar < AdxPeriod)
+                    return;
+
+                if (UseEmaTrendFilter && CurrentBar < EmaTrendPeriod - 1)
+                    return;
+
+                if (!insideTradingWindow)
+                    return;
+
+                if (IsTrendingMarket())
+                    return;
+
+                if (!IsAboveEmaTrendFilter())
+                    return;
+
+                bool longSignal = InvertLogic ? HasBullishSequence() : HasBearishSequence();
+                bool shortSignal = InvertLogic ? HasBearishSequence() : HasBullishSequence();
+
+                if (longSignal)
+                {
+                    PrepareProtectiveOrders(LongSignalName);
+                    breakEvenMoved = false;
+                    EnterLong(LongSignalName);
+                    return;
+                }
+
+                if (shortSignal)
+                {
+                    PrepareProtectiveOrders(ShortSignalName);
+                    breakEvenMoved = false;
+                    EnterShort(ShortSignalName);
+                }
             }
-
-            if (!insideTradingWindow)
-                return;
-
-            if (IsTrendingMarket())
-                return;
-
-            bool longSignal = InvertLogic ? HasBullishSequence() : HasBearishSequence();
-            bool shortSignal = InvertLogic ? HasBearishSequence() : HasBullishSequence();
-
-            if (longSignal)
+            finally
             {
-                PrepareProtectiveOrders(LongSignalName);
-                breakEvenMoved = false;
-                EnterLong(LongSignalName);
-                return;
-            }
-
-            if (shortSignal)
-            {
-                PrepareProtectiveOrders(ShortSignalName);
-                breakEvenMoved = false;
-                EnterShort(ShortSignalName);
+                lastKnownStrategyPnL = strategyNetPnL;
             }
         }
 
@@ -167,6 +206,65 @@ namespace NinjaTrader.NinjaScript.Strategies
             return adx[0] >= AdxTrendThreshold;
         }
 
+        private bool IsAboveEmaTrendFilter()
+        {
+            if (!UseEmaTrendFilter)
+                return true;
+
+            return Close[0] > emaTrend[0];
+        }
+
+        private double GetStrategyNetPnL()
+        {
+            double realizedPnL = SystemPerformance.AllTrades.TradesPerformance.Currency.CumProfit;
+
+            if (Position.MarketPosition == MarketPosition.Flat)
+                return realizedPnL;
+
+            return realizedPnL + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]);
+        }
+
+        private void ResetDailyPnLTrackingIfNeeded(double strategyNetPnL)
+        {
+            DateTime currentBarDate = Time[0].Date;
+
+            if (!hasTrackedPnLDate)
+            {
+                trackedPnLDate = currentBarDate;
+                dailyPnLBaseline = CurrentBar == 0 ? strategyNetPnL : lastKnownStrategyPnL;
+                dailyPnLLimitReached = false;
+                hasTrackedPnLDate = true;
+                return;
+            }
+
+            if (currentBarDate == trackedPnLDate)
+                return;
+
+            trackedPnLDate = currentBarDate;
+            dailyPnLBaseline = lastKnownStrategyPnL;
+            dailyPnLLimitReached = false;
+        }
+
+        private bool HasReachedDailyPnLLimit(double dailyPnL)
+        {
+            if (dailyPnLLimitReached)
+                return true;
+
+            if (UseDailyProfitLimit && dailyPnL >= DailyProfitLimit)
+            {
+                dailyPnLLimitReached = true;
+                return true;
+            }
+
+            if (UseDailyLossLimit && dailyPnL <= -DailyLossLimit)
+            {
+                dailyPnLLimitReached = true;
+                return true;
+            }
+
+            return false;
+        }
+
         private bool HasBearishSequence()
         {
             return HasExactSequence(IsBearishBar);
@@ -214,12 +312,12 @@ namespace NinjaTrader.NinjaScript.Strategies
             return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
         }
 
-        private void ExitOpenPosition()
+        private void ExitOpenPosition(string exitSignalName)
         {
             if (Position.MarketPosition == MarketPosition.Long)
-                ExitLong("OutsideScheduleExit", LongSignalName);
+                ExitLong(exitSignalName, LongSignalName);
             else if (Position.MarketPosition == MarketPosition.Short)
-                ExitShort("OutsideScheduleExit", ShortSignalName);
+                ExitShort(exitSignalName, ShortSignalName);
         }
 
         private void ValidateQuarterHourInput(double value, string parameterName)
@@ -292,6 +390,17 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "Usar filtro EMA", GroupName = "03. Tendencia", Order = 3)]
+        public bool UseEmaTrendFilter
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "EMA periodo", GroupName = "03. Tendencia", Order = 4)]
+        public int EmaTrendPeriod
+        { get; set; }
+
+        [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
         [Display(Name = "Stop loss (ticks)", GroupName = "04. Riesgo", Order = 0)]
         public int StopLossTicks
@@ -313,6 +422,28 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(0, int.MaxValue)]
         [Display(Name = "Offset break even (ticks)", GroupName = "04. Riesgo", Order = 3)]
         public int BreakEvenPlusTicks
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Usar profit diario", GroupName = "05. Limites diarios", Order = 0)]
+        public bool UseDailyProfitLimit
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Profit diario ($)", GroupName = "05. Limites diarios", Order = 1)]
+        public int DailyProfitLimit
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Usar stop diario", GroupName = "05. Limites diarios", Order = 2)]
+        public bool UseDailyLossLimit
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Stop diario ($)", GroupName = "05. Limites diarios", Order = 3)]
+        public int DailyLossLimit
         { get; set; }
     }
 }

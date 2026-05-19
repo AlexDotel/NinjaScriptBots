@@ -17,7 +17,6 @@ namespace NinjaTrader.NinjaScript.Strategies.Dotel
     public class Breakout55WithFilters_RiskDollars : Strategy
     {
         // ===== Indicadores =====
-        private ATR atr;
         private ADX adx;
         private EMA trendEma;
 
@@ -44,16 +43,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Dotel
         [Display(Name = "One trade per day", Order = 4, GroupName = "1. Breakout")]
         public bool OneTradePerDay { get; set; } = true;
 
-        // ===== Risk: ATR SL + RRR TP + Risk in dollars (auto qty) =====
+        // ===== Risk: fixed SL ticks + RRR TP + Risk in dollars (auto qty) =====
         [NinjaScriptProperty]
-        [Range(1, 200)]
-        [Display(Name = "ATR Period", Order = 10, GroupName = "2. Risk")]
-        public int AtrPeriod { get; set; } = 14;
-
-        [NinjaScriptProperty]
-        [Range(0.1, 50)]
-        [Display(Name = "ATR Multiplier (SL)", Order = 11, GroupName = "2. Risk")]
-        public double AtrMultSL { get; set; } = 2.0;
+        [Range(1, 5000)]
+        [Display(Name = "Stop Loss (ticks)", Order = 10, GroupName = "2. Risk")]
+        public int StopLossTicks { get; set; } = 40;
 
         [NinjaScriptProperty]
         [Range(0.1, 50)]
@@ -114,11 +108,11 @@ namespace NinjaTrader.NinjaScript.Strategies.Dotel
         [Display(Name = "ADX Period", Order = 41, GroupName = "4. Optional Filters")]
         public int AdxPeriod { get; set; } = 14;
 
-        // “Como siempre me pides”: ADX <= AdxMax
+        // Requiere fuerza minima de tendencia: ADX >= AdxMin
         [NinjaScriptProperty]
         [Range(1, 100)]
-        [Display(Name = "ADX Max (Require ADX <= Max)", Order = 42, GroupName = "4. Optional Filters")]
-        public double AdxMax { get; set; } = 25;
+        [Display(Name = "ADX Min (Require ADX >= Min)", Order = 42, GroupName = "4. Optional Filters")]
+        public double AdxMin { get; set; } = 25;
 
         // ===== Break-even =====
         [NinjaScriptProperty]
@@ -150,7 +144,6 @@ namespace NinjaTrader.NinjaScript.Strategies.Dotel
             }
             else if (State == State.DataLoaded)
             {
-                atr = ATR(AtrPeriod);
                 adx = ADX(AdxPeriod);
 
                 if (TrendEmaPeriod > 0)
@@ -187,6 +180,13 @@ namespace NinjaTrader.NinjaScript.Strategies.Dotel
                 return;
             }
 
+            // Si ya hay posicion, solo gestionar BE y no reconfigurar SL/TP de entrada.
+            if (Position.MarketPosition != MarketPosition.Flat)
+            {
+                ManageBreakEven();
+                return;
+            }
+
             // ===== Ventana horaria (opcional) =====
             if (UseTimeWindow)
             {
@@ -203,23 +203,22 @@ namespace NinjaTrader.NinjaScript.Strategies.Dotel
             if (OneTradePerDay && tradedToday)
                 return;
 
-            // ===== Filtro ADX (opcional): ADX <= AdxMax =====
-            if (UseAdxFilter && adx[0] > AdxMax)
+            // ===== Filtro ADX (opcional): requiere fuerza minima de tendencia =====
+            if (UseAdxFilter && adx[0] < AdxMin)
                 return;
 
             // ===== Breakout levels (excluyendo vela actual) =====
             double prevHigh = MAX(High, Lookback)[1];
             double prevLow  = MIN(Low, Lookback)[1];
 
-            // ===== SL ticks desde ATR =====
-            double atrValue = atr[0];
-            int slTicks = PriceToTicks(atrValue * AtrMultSL);
+            // ===== SL fijo en ticks =====
+            int slTicks = StopLossTicks;
             slTicks = Math.Max(1, slTicks);
 
             // ===== Qty automático por riesgo en dólares =====
             int qty = CalculateQtyFromRisk(slTicks, RiskDollars, MaxContracts);
             if (qty < 1)
-                return; // con el SL actual (ATR), no se puede respetar el riesgo
+                return; // con el SL actual, no se puede respetar el riesgo
 
             // ===== TP ticks =====
             int tpTicks = (int)Math.Round(slTicks * Rrr, MidpointRounding.AwayFromZero);

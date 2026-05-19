@@ -1,0 +1,98 @@
+{
+  "source_file": "C:\\Users\\joalr\\Documents\\# Data Exportada de Ninja\\ES 03-25.Last.txt",
+  "rows_raw": 70826,
+  "rows_model": 70767,
+  "start": "2025-01-01 23:01:00",
+  "end": "2025-03-14 21:00:00",
+  "horizon_minutes": 60,
+  "threshold_atr": 1.5,
+  "class_distribution_model_rows": {
+    "trend_up": 28604,
+    "trend_down": 25554,
+    "range": 16609
+  },
+  "train": {
+    "accuracy": 0.38441700669457546,
+    "confusion_matrix": [
+      [
+        4441,
+        4125,
+        4537
+      ],
+      [
+        5113,
+        7308,
+        7507
+      ],
+      [
+        6327,
+        7241,
+        10014
+      ]
+    ],
+    "per_class": {
+      "range": {
+        "precision": 0.2796423399030288,
+        "recall": 0.33893001602686407,
+        "support": 13103
+      },
+      "trend_down": {
+        "precision": 0.3913462568276748,
+        "recall": 0.3667201926936973,
+        "support": 19928
+      },
+      "trend_up": {
+        "precision": 0.4539849487714208,
+        "recall": 0.42464591637689764,
+        "support": 23582
+      }
+    }
+  },
+  "test": {
+    "accuracy": 0.3050021195421789,
+    "confusion_matrix": [
+      [
+        2169,
+        436,
+        901
+      ],
+      [
+        3379,
+        917,
+        1330
+      ],
+      [
+        2997,
+        794,
+        1231
+      ]
+    ],
+    "per_class": {
+      "range": {
+        "precision": 0.2538326506729081,
+        "recall": 0.6186537364517969,
+        "support": 3506
+      },
+      "trend_down": {
+        "precision": 0.4271075919888216,
+        "recall": 0.16299324564521864,
+        "support": 5626
+      },
+      "trend_up": {
+        "precision": 0.3555748122472559,
+        "recall": 0.24512146555157308,
+        "support": 5022
+      }
+    }
+  },
+  "latest_bar": {
+    "timestamp": "2025-03-14 21:00:00",
+    "close": 5628.75,
+    "prediction": "trend_up",
+    "probabilities": {
+      "range": 0.29918604834267754,
+      "trend_down": 0.33037680754232635,
+      "trend_up": 0.3704371441149962
+    }
+  }
+}

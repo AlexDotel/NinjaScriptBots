@@ -1,0 +1,153 @@
+{
+  "source_file": "C:\\Users\\joalr\\Documents\\# Data Exportada de Ninja\\ES 03-25.Last.txt",
+  "rows_raw": 70826,
+  "rows_model": 70737,
+  "start": "2025-01-01 23:01:00",
+  "end": "2025-03-14 21:00:00",
+  "horizon_minutes": 30,
+  "threshold_atr": 3.0,
+  "target_definition": "1 when current_regime changes within the next 30 bars; 0 otherwise.",
+  "class_distribution_model_rows": {
+    "change_soon": 47374,
+    "stable": 23363
+  },
+  "train": {
+    "accuracy": 0.6600399370902472,
+    "confusion_matrix": [
+      [
+        10736,
+        7682
+      ],
+      [
+        11556,
+        26615
+      ]
+    ],
+    "per_class": {
+      "stable": {
+        "precision": 0.48160775165978825,
+        "recall": 0.5829080247583885,
+        "support": 18418
+      },
+      "change_soon": {
+        "precision": 0.7760153949325014,
+        "recall": 0.6972570799821854,
+        "support": 38171
+      }
+    }
+  },
+  "test": {
+    "accuracy": 0.6121006502685892,
+    "confusion_matrix": [
+      [
+        2749,
+        2196
+      ],
+      [
+        3292,
+        5911
+      ]
+    ],
+    "per_class": {
+      "stable": {
+        "precision": 0.4550571097500414,
+        "recall": 0.5559150657229525,
+        "support": 4945
+      },
+      "change_soon": {
+        "precision": 0.7291229801406193,
+        "recall": 0.642290557426926,
+        "support": 9203
+      }
+    }
+  },
+  "transition_threshold_metrics_train": {
+    "0.40": {
+      "precision": 0.7545697776378802,
+      "recall": 0.8792276859395877,
+      "false_alarm_rate": 0.5926810728635031,
+      "tp": 33561,
+      "fp": 10916,
+      "fn": 4610,
+      "tn": 7502
+    },
+    "0.50": {
+      "precision": 0.7760153949325014,
+      "recall": 0.6972570799821854,
+      "false_alarm_rate": 0.41709197524161146,
+      "tp": 26615,
+      "fp": 7682,
+      "fn": 11556,
+      "tn": 10736
+    },
+    "0.60": {
+      "precision": 0.7419693470501785,
+      "recall": 0.3703334992533599,
+      "false_alarm_rate": 0.2669128026930177,
+      "tp": 14136,
+      "fp": 4916,
+      "fn": 24035,
+      "tn": 13502
+    },
+    "0.70": {
+      "precision": 0.6887966804979253,
+      "recall": 0.05218621466558382,
+      "false_alarm_rate": 0.04886524052557281,
+      "tp": 1992,
+      "fp": 900,
+      "fn": 36179,
+      "tn": 17518
+    }
+  },
+  "transition_threshold_metrics_test": {
+    "0.40": {
+      "precision": 0.7229754488823745,
+      "recall": 0.8575464522438335,
+      "false_alarm_rate": 0.6115267947421638,
+      "tp": 7892,
+      "fp": 3024,
+      "fn": 1311,
+      "tn": 1921
+    },
+    "0.50": {
+      "precision": 0.7291229801406193,
+      "recall": 0.642290557426926,
+      "false_alarm_rate": 0.44408493427704754,
+      "tp": 5911,
+      "fp": 2196,
+      "fn": 3292,
+      "tn": 2749
+    },
+    "0.60": {
+      "precision": 0.6692816866879137,
+      "recall": 0.2966423992176464,
+      "false_alarm_rate": 0.27280080889787667,
+      "tp": 2730,
+      "fp": 1349,
+      "fn": 6473,
+      "tn": 3596
+    },
+    "0.70": {
+      "precision": 0.5807017543859649,
+      "recall": 0.03596653265239596,
+      "false_alarm_rate": 0.04833164812942366,
+      "tp": 331,
+      "fp": 239,
+      "fn": 8872,
+      "tn": 4706
+    }
+  },
+  "latest_bar": {
+    "timestamp": "2025-03-14 20:30:00",
+    "close": 5626.25,
+    "current_regime": "trend",
+    "prediction": "stable",
+    "prob_change_soon": 0.4279748138516435,
+    "minutes_to_regime_change": 11,
+    "next_regime": "range",
+    "probabilities": {
+      "stable": 0.5720251861483565,
+      "change_soon": 0.4279748138516435
+    }
+  }
+}

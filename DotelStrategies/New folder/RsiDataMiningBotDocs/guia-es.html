@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Guia de Uso - RsiDataMiningBot</title>
+    <meta name="description" content="Guia detallada en espanol para usar RsiDataMiningBot en NinjaTrader y Strategy Analyzer.">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="page-shell">
+        <header class="doc-header">
+            <a class="back-link" href="index.html">Inicio</a>
+            <span class="eyebrow">Guia en Espanol</span>
+            <h1>Como usar RsiDataMiningBot</h1>
+            <p class="lede">
+                Esta guia explica como cargar la estrategia, compilarla, probarla en Strategy Analyzer,
+                interpretar sus parametros y optimizarla con criterio para evitar sobreajuste.
+            </p>
+        </header>
+
+        <div class="doc-layout">
+            <aside class="toc">
+                <h2>Contenido</h2>
+                <nav>
+                    <a href="#que-es">1. Que es</a>
+                    <a href="#instalacion">2. Instalacion</a>
+                    <a href="#primer-test">3. Primer backtest</a>
+                    <a href="#parametros">4. Parametros</a>
+                    <a href="#modos-rsi">5. Modos RSI</a>
+                    <a href="#flujo">6. Flujo de optimizacion</a>
+                    <a href="#sobreoptimizacion">7. Evitar sobreoptimizacion</a>
+                    <a href="#presets">8. Presets recomendados</a>
+                    <a href="#lectura">9. Como leer resultados</a>
+                    <a href="#errores">10. Errores comunes</a>
+                </nav>
+            </aside>
+
+            <main class="doc-content">
+                <section id="que-es" class="reveal">
+                    <span class="eyebrow">1. Que es</span>
+                    <h2>Un laboratorio RSI, no una estrategia cerrada</h2>
+                    <p>
+                        <strong>RsiDataMiningBot</strong> esta pensado para investigar patrones repetibles alrededor del RSI
+                        sin tener que programar una estrategia distinta para cada idea. En vez de una sola logica fija,
+                        combina una familia de entrada RSI, filtros de contexto, protecciones y reglas de salida.
+                    </p>
+                    <p>
+                        La idea central es que puedas barrer muchas hipotesis en <strong>Strategy Analyzer</strong>,
+                        pero manteniendo el espacio de busqueda ordenado. El bot da flexibilidad, pero no intenta exponer
+                        cien interruptores descontrolados.
+                    </p>
+                </section>
+
+                <section id="instalacion" class="reveal reveal-delay-1">
+                    <span class="eyebrow">2. Instalacion</span>
+                    <h2>Como cargarlo en NinjaTrader 8</h2>
+                    <ol class="doc-list">
+                        <li>Abre <strong>NinjaTrader 8</strong>.</li>
+                        <li>Ve a <strong>New &gt; NinjaScript Editor</strong>.</li>
+                        <li>Comprueba que el archivo <code>RsiDataMiningBot.cs</code> este en tu carpeta de estrategias personalizadas.</li>
+                        <li>En el editor, pulsa <strong>Compile</strong>.</li>
+                        <li>Si no aparecen errores de compilacion, la estrategia quedara disponible en <strong>Strategy Analyzer</strong> y en los charts.</li>
+                    </ol>
+                    <div class="callout">
+                        <strong>Ruta esperada:</strong>
+                        <code>Documents\NinjaTrader 8\bin\Custom\Strategies\DotelStrategies\New folder\RsiDataMiningBot.cs</code>
+                    </div>
+                </section>
+
+                <section id="primer-test" class="reveal reveal-delay-2">
+                    <span class="eyebrow">3. Primer backtest</span>
+                    <h2>Configuracion base para confirmar que todo funciona</h2>
+                    <ol class="doc-list">
+                        <li>Abre <strong>New &gt; Strategy Analyzer</strong>.</li>
+                        <li>Selecciona <strong>Backtest</strong>.</li>
+                        <li>Elige la estrategia <strong>RsiDataMiningBot</strong>.</li>
+                        <li>Escoge un instrumento liquido y una temporalidad simple para empezar, por ejemplo 5 o 15 minutos.</li>
+                        <li>Usa al principio un rango historico corto pero representativo, por ejemplo 6 a 12 meses.</li>
+                        <li>Ejecuta primero una sola corrida con parametros por defecto antes de optimizar.</li>
+                    </ol>
+                    <p>
+                        Si esa primera corrida produce operaciones y resultados coherentes, entonces ya puedes pasar a la fase de investigacion.
+                    </p>
+                </section>
+
+                <section id="parametros" class="reveal reveal-delay-3">
+                    <span class="eyebrow">4. Parametros</span>
+                    <h2>Como esta organizado el bot</h2>
+                    <div class="table-like">
+                        <div class="table-row">
+                            <strong>01. General</strong>
+                            <span>Direccion, cantidad, horario, cierre fuera de ventana, trades maximos por sesion y perdida diaria.</span>
+                        </div>
+                        <div class="table-row">
+                            <strong>02. RSI Core</strong>
+                            <span>Modo de entrada, periodos RSI, niveles, linea media, lookbacks y validaciones de senal.</span>
+                        </div>
+                        <div class="table-row">
+                            <strong>03. Contexto</strong>
+                            <span>Filtros de tendencia, ADX, ATR y accion del precio.</span>
+                        </div>
+                        <div class="table-row">
+                            <strong>04. Salidas</strong>
+                            <span>Modo de SL y TP, multiplicadores ATR o ticks fijos, salida por media, senal contraria o timeout.</span>
+                        </div>
+                    </div>
+                    <p>
+                        Esta separacion es importante: optimiza primero el bloque <strong>RSI Core</strong>, luego anade contexto,
+                        y solo al final afina las salidas.
+                    </p>
+                </section>
+
+                <section id="modos-rsi" class="reveal">
+                    <span class="eyebrow">5. Modos RSI</span>
+                    <h2>Que hace cada familia de entrada</h2>
+                    <div class="card-stack">
+                        <article class="mini-card">
+                            <h3>CrossBackFromExtreme</h3>
+                            <p>Busca reversion. En largo entra cuando el RSI estaba por debajo del nivel inferior y vuelve a cruzarlo al alza. En corto hace lo inverso con el nivel superior.</p>
+                        </article>
+                        <article class="mini-card">
+                            <h3>ExtremeTouch</h3>
+                            <p>Entra por simple toque de extremo. Es el modo mas agresivo y normalmente necesita buenos filtros para no disparar demasiadas operaciones.</p>
+                        </article>
+                        <article class="mini-card">
+                            <h3>CenterlineCross</h3>
+                            <p>Busca continuidad al cruzar la linea media. Suele comportarse mejor en entornos tendenciales que en pura reversion.</p>
+                        </article>
+                        <article class="mini-card">
+                            <h3>SignalLineCross</h3>
+                            <p>Usa una media del RSI como linea de senal. Es util cuando quieres entradas algo mas suaves y menos abruptas que un simple umbral.</p>
+                        </article>
+                        <article class="mini-card">
+                            <h3>RecoveryFromExtreme</h3>
+                            <p>Exige que haya existido un extremo reciente y despues recuperacion hacia la linea media. Es mas selectivo que tocar extremo sin mas.</p>
+                        </article>
+                        <article class="mini-card">
+                            <h3>BreakoutThroughExtreme</h3>
+                            <p>Busca impulsos que atraviesan un extremo, no reversion. Tiene sentido si lo combinas con filtros de tendencia o momentum.</p>
+                        </article>
+                        <article class="mini-card">
+                            <h3>SlopeReversalAfterExtreme</h3>
+                            <p>Espera extremo previo y giro de pendiente en el RSI. Suele ser interesante cuando quieres detectar arranque tras agotamiento.</p>
+                        </article>
+                    </div>
+                </section>
+
+                <section id="flujo" class="reveal reveal-delay-1">
+                    <span class="eyebrow">6. Flujo de optimizacion</span>
+                    <h2>Orden recomendado para investigar rapido y bien</h2>
+                    <ol class="doc-list">
+                        <li><strong>Paso 1:</strong> fija instrumento, timeframe y horario.</li>
+                        <li><strong>Paso 2:</strong> optimiza solo <code>EntrySignalMode</code>, <code>RsiPeriod</code>, <code>LowerThreshold</code>, <code>Midline</code> y <code>ExtremeLookback</code>.</li>
+                        <li><strong>Paso 3:</strong> congela la mejor familia RSI y prueba solo un filtro de contexto a la vez: tendencia o ADX o ATR.</li>
+                        <li><strong>Paso 4:</strong> ajusta las salidas, preferiblemente con pocos grados de libertad.</li>
+                        <li><strong>Paso 5:</strong> valida fuera de muestra antes de confiar en el resultado.</li>
+                    </ol>
+                    <div class="callout">
+                        <strong>Regla practica:</strong> si optimizas demasiados bloques a la vez, el mejor resultado suele ser el mas casual, no el mas robusto.
+                    </div>
+                </section>
+
+                <section id="sobreoptimizacion" class="reveal reveal-delay-2">
+                    <span class="eyebrow">7. Evitar sobreoptimizacion</span>
+                    <h2>Como usar la flexibilidad sin destruir la robustez</h2>
+                    <ul class="doc-list">
+                        <li>No optimices todos los parametros simultaneamente.</li>
+                        <li>No cambies instrumento y timeframe mientras optimizas la logica central.</li>
+                        <li>Usa rangos razonables: por ejemplo RSI 5-21, niveles 20-40, lookbacks cortos.</li>
+                        <li>Prefiere simetria en los niveles al principio con <code>UseSymmetricThresholds = true</code>.</li>
+                        <li>Exige confirmacion fuera de muestra y, si puedes, en otro tramo de mercado.</li>
+                        <li>Valora estabilidad entre conjuntos cercanos de parametros, no solo el mejor punto absoluto.</li>
+                    </ul>
+                    <p>
+                        Una buena configuracion no solo gana con un parametro exacto. Tambien deberia comportarse razonablemente bien en vecinos cercanos.
+                    </p>
+                </section>
+
+                <section id="presets" class="reveal reveal-delay-3">
+                    <span class="eyebrow">8. Presets recomendados</span>
+                    <h2>Tres puntos de partida utiles</h2>
+                    <div class="card-stack">
+                        <article class="mini-card">
+                            <h3>Mean Reversion Basica</h3>
+                            <p><code>CrossBackFromExtreme</code>, <code>RsiPeriod=5-9</code>, <code>LowerThreshold=25-35</code>, <code>TrendFilter=None</code>, <code>AdxFilter=Maximum</code>.</p>
+                        </article>
+                        <article class="mini-card">
+                            <h3>Pullback en Tendencia</h3>
+                            <p><code>RecoveryFromExtreme</code> o <code>SignalLineCross</code>, <code>TrendFilter=StackAndSlope</code>, <code>ProtectiveOrderMode=Atr</code>.</p>
+                        </article>
+                        <article class="mini-card">
+                            <h3>Momentum RSI</h3>
+                            <p><code>BreakoutThroughExtreme</code> o <code>CenterlineCross</code>, <code>AdxFilter=Minimum</code>, <code>PriceActionFilter=BreakPreviousBar</code>.</p>
+                        </article>
+                    </div>
+                </section>
+
+                <section id="lectura" class="reveal">
+                    <span class="eyebrow">9. Como leer resultados</span>
+                    <h2>Que mirar ademas del beneficio neto</h2>
+                    <ul class="doc-list">
+                        <li><strong>Profit factor:</strong> mejor si no depende de muy pocas operaciones.</li>
+                        <li><strong>Drawdown:</strong> importa tanto como el beneficio.</li>
+                        <li><strong>Numero de trades:</strong> una estadistica con muy pocas muestras vale poco.</li>
+                        <li><strong>Distribucion por periodos:</strong> revisa si todo el resultado viene de un mes excepcional.</li>
+                        <li><strong>Consistencia:</strong> compara periodos de mercado distintos.</li>
+                    </ul>
+                </section>
+
+                <section id="errores" class="reveal reveal-delay-1">
+                    <span class="eyebrow">10. Errores comunes</span>
+                    <h2>Problemas tipicos y su causa</h2>
+                    <div class="table-like">
+                        <div class="table-row">
+                            <strong>No genera trades</strong>
+                            <span>La combinacion de filtros puede ser demasiado estricta o el horario no coincide con el mercado.</span>
+                        </div>
+                        <div class="table-row">
+                            <strong>Genera demasiadas operaciones</strong>
+                            <span>Estas usando <code>ExtremeTouch</code> sin filtros suficientes o sin distancia entre entradas.</span>
+                        </div>
+                        <div class="table-row">
+                            <strong>Resultados espectaculares pero fragiles</strong>
+                            <span>Probablemente se optimizaron demasiados parametros a la vez o sobre un rango historico demasiado pequeno.</span>
+                        </div>
+                        <div class="table-row">
+                            <strong>Compila pero no aparece</strong>
+                            <span>Revisa namespace, errores en otras estrategias o que el archivo este realmente dentro de la carpeta correcta.</span>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+</body>
+</html>
